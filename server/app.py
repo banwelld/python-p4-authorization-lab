@@ -30,8 +30,11 @@ class ClearSession(Resource):
 class IndexArticle(Resource):
     
     def get(self):
-        articles = [article.to_dict() for article in Article.query.all()]
-        return make_response(jsonify(articles), 200)
+        articles = [
+            article.to_dict() for article
+            in Article.query.filter(Article.is_member_only == False).all()
+        ]
+        return make_response(articles, 200)
 
 class ShowArticle(Resource):
 
@@ -39,8 +42,13 @@ class ShowArticle(Resource):
 
         article = Article.query.filter(Article.id == id).first()
         article_json = article.to_dict()
-
-        if not session.get('user_id'):
+        
+        user_id = session.get('user_id')
+        
+        if not user_id:
+            if article_json['is_member_only']:
+                return make_response({'error': 'Content available to logged in members only!'}, 401)
+        
             session['page_views'] = 0 if not session.get('page_views') else session.get('page_views')
             session['page_views'] += 1
 
@@ -76,23 +84,34 @@ class Logout(Resource):
 class CheckSession(Resource):
 
     def get(self):
-        
-        user_id = session['user_id']
+        user_id = session.get('user_id')
         if user_id:
             user = User.query.filter(User.id == user_id).first()
             return user.to_dict(), 200
-        
-        return {}, 401
+    
+@app.before_request
+def ensure_logged_in():
+    user_id = session.get('user_id')
+    if not user_id:
+        if request.endpoint in ('member_index', 'member_article'):
+            return make_response(
+                {'error': 'Content available to logged in members only!'}, 401)
 
 class MemberOnlyIndex(Resource):
     
     def get(self):
-        pass
+        articles = [
+            article.to_dict() for article
+            in Article.query.filter(Article.is_member_only == True).all()
+        ]
+        return make_response(articles, 200)
 
 class MemberOnlyArticle(Resource):
     
     def get(self, id):
-        pass
+        article = Article.query.filter(Article.id == id).first()
+        article_json = article.to_dict()
+        return article_json, 200
 
 api.add_resource(ClearSession, '/clear', endpoint='clear')
 api.add_resource(IndexArticle, '/articles', endpoint='article_list')
